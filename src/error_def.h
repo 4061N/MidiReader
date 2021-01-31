@@ -1,7 +1,7 @@
 #ifndef ERROR_DEF_h
 #define ERROR_DEF_h
 
-#define PRINT_ERROR(error_code) std::cout << get_error_msg(error_code) << std::endl;
+#define PRINT_ERROR(error_code); std::cout << get_error_msg(error_code) << std::endl;
 
 enum ERROR_CODE
 {

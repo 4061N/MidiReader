@@ -73,6 +73,30 @@ struct DeltaTime
     }
 };
 
+//80 松开音符
+//90 按下音符
+//A0 触后音符
+//B0 控制器
+//C0 改变乐器
+//D0 触后通道
+//E0 滑音
+//F0 系统码
+//FF 01 文字
+//FF 02 版权
+//FF 03 序列或名称
+//FF 04 乐器
+//FF 05 歌词
+//FF 06 标记
+//FF 07 提示点
+//FF 20 MIDI通道
+//FF 21 MIDI端口
+//FF 2F MTrk结束标记
+//FF 51 速度
+//FF 54 SMPTE偏移     FF 54 05 hr mn se fr ff
+//FF 58 时间签名      FF 58 04 nn dd cc bb
+//FF 59 密钥签名      FF 59 02 sf mi
+//FF 7F 专有/其他数据
+
 
 struct MetaEvent
 {
@@ -81,14 +105,15 @@ struct MetaEvent
     
     //可选
     short m_seqNum;
-    std::string m_text;
-    std::string m_copyright;
-    std::string m_name;
-    std::string m_lyric;
-    std::string m_marker;
-    std::string m_cuePoint;
-    std::string m_programName;
-    std::string m_deviceName;
+    std::string m_text;             //FF 01文字
+    std::string m_copyright;        //FF 02版权
+    std::string m_name;             //FF 03序列或名称
+    std::string m_instrument;       //FF 04乐器
+    std::string m_lyric;            //FF 05歌词
+    std::string m_marker;           //FF 06标记
+    std::string m_cuePoint;         //FF 07提示点
+    std::string m_programName;      //
+    std::string m_deviceName;       //
     char m_channelPrefix;
     char m_port;
     uint32_t m_usecPerQuarterNote : 24; //位域24
@@ -211,17 +236,79 @@ struct MidiFile
 };
 #endif
 
+
+
+class MidiReader_file_interface
+{
+private:
+    int size;// 文件总大小 file size
+    int pos;// 当前读到的位置 pos
+    std::ifstream F;//文件对象 file
+    std::shared_ptr<char> buf;//缓冲区 buf
+
+public:
+    MidiReader_file_interface()
+    {
+        size = 0;
+        pos = 0;
+    }
+    MidiReader_file_interface(std::string path)
+    {
+        size = 0;
+        pos = 0;
+        read(path);
+    }
+    ~MidiReader_file_interface()
+    {
+        if (F.is_open())
+        {
+            F.close();
+        }
+    }
+
+    //文件的打开与关闭
+    bool read(std::string file_path);
+
+    //读取数据
+    bool _get_byte(char* data_buf,int byte_num);//从文件中读取指定字节大小的内容
+    bool get(void* addr, size_t len, bool is_char);
+    bool get_str(std::string& str, size_t len);
+
+    int get_pos()//当前读取所在位置
+    {
+        return pos;
+    }
+    bool eof()
+    {
+        if (pos == size)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+};
+
+
+
 class MidiReader
 {
 public:
+    /*
     bool open_file(std::string file_path);
     bool read_file(MidiFile &file);
+    */
     // len指定读取的结构大小 is_char如果为true则不进行大小端转换
+    /*
     template<typename T> bool read_var(const T &t, void* addr, size_t len = 0, bool is_char = false);
     bool read_str(std::string &str, size_t len);
-    bool read_header(MidiHeader &header);
-    bool read_tracks(MidiTrack &tracks);
-    // print
+    */
+    bool read_header();
+    bool read_tracks();
+
+    //屏幕输出 print
     void print_header(const MidiHeader &header);
     void print_tracks(const MidiTrack &tracks);
     void print_file(const MidiFile &file);
@@ -229,21 +316,30 @@ public:
     MidiReader();
     MidiReader(std::string file_path);
     ~MidiReader();
+
+    MidiFile midi;
+
     // private:
 public:
-    // 文件总大小
-    int file_size;
-    // 当前读到的位置
-    int current_pos;
-   
-    bool is_read_header_ok;
-    std::ifstream fs;
+    
+    MidiReader_file_interface MF_interface;
+    int file_size;// 文件总大小 file size
+    
+    int current_pos;// 当前读到的位置 location
 
-    std::shared_ptr<char> buff;
+    char test_s[5];
+    bool read_ok;
+
+    std::ifstream fs;//文件对象 file
+
+    std::shared_ptr<char> buff;//缓冲区 buf
 
     bool is_file_opened(){ return fs.is_open(); }
     bool read(int byte_num);
-    void buff_clean();
+
+    bool read(std::string path);
+
+    void buff_clean();//清空缓冲区 clean data buffer
     void init();
     // track inner
     bool read_messages(MidiMessage &message);
