@@ -76,18 +76,19 @@ struct DeltaTime
 //80 松开音符
 //90 按下音符
 //A0 触后音符
-//B0 控制器
+//B0 控制器变化
 //C0 改变乐器
-//D0 触后通道
+//D0 通道触动压力
 //E0 滑音
 //F0 系统码
-//FF 01 文字
-//FF 02 版权
-//FF 03 序列或名称
+//FF 00 设置轨道音序
+//FF 01 文本信息
+//FF 02 版权信息
+//FF 03 音轨名称或歌曲名称
 //FF 04 乐器
 //FF 05 歌词
 //FF 06 标记
-//FF 07 提示点
+//FF 07 提示点/注释
 //FF 20 MIDI通道
 //FF 21 MIDI端口
 //FF 2F MTrk结束标记
@@ -96,8 +97,196 @@ struct DeltaTime
 //FF 58 时间签名      FF 58 04 nn dd cc bb
 //FF 59 密钥签名      FF 59 02 sf mi
 //FF 7F 专有/其他数据
+/*
+enum env_type : char
+{
+    META_SEQUENCE_NUM = 0,
+    META_TEXT = 1,
+    META_COPYRIGHT = 2,
+    META_SEQUENCE_NAME = 3,
+    META_INSTRUMENT_NAME = 4,
+    META_LYRIC = 5,
+    META_MARKER = 6,
+    META_CUE_POINT = 7,
+    META_PROGRAM_NAME = 8,
+    META_DEVICE_NAME = 9,
+    META_MIDI_CHANNEL_PREFIX = 0x20,
+    META_MIDI_PORT = 0x21,
+    META_END_OF_TRACK = 0x2f,
+    META_TEMPO = 0x51,
+    META_SMPTE_OFFSET = 0x54,
+    META_TIME_SIGNATURE = 0x58,
+    META_KEY_SIGNATURE = 0x59,
+    META_SEQUENCER_EVENT = 0x7f
+};
+*/
+namespace midi_reader
+{
+    enum midi_message_type :unsigned char
+    {
+        release = 0x80, //松开音符
+        push = 0x90, //按下音符
+        touch = 0xA0, //触后音符
+        controller = 0xB0, //控制器变化
+        instrument = 0xC0, //改变乐器
+        pressure = 0xD0, //通道触动压力
+        slip = 0xE0, //滑音
+        system = 0xF0  //系统数据
+        //FF 00 设置轨道音序
+        //FF 01 文本信息
+        //FF 02 版权信息
+        //FF 03 音轨名称或歌曲名称
+        //FF 04 乐器
+        //FF 05 歌词
+        //FF 06 标记
+        //FF 07 提示点/注释
+        //FF 20 MIDI通道
+        //FF 21 MIDI端口
+        //FF 2F MTrk结束标记
+        //FF 51 速度
+        //FF 54 SMPTE偏移     FF 54 05 hr mn se fr ff
+        //FF 58 时间签名      FF 58 04 nn dd cc bb
+        //FF 59 密钥签名      FF 59 02 sf mi
+        //FF 7F 专有/其他数据
+    };
+}
+class midi_event
+{
+public:
+    uint32_t delay ;
+    unsigned char message ;
+    unsigned char message_ex ;
+    uint32_t data_size ;
+    std::shared_ptr <unsigned char> message_data;
+    midi_event()
+    {
+        delay = 0;
+        message = 0;
+        message_ex = 0;
+        data_size = 0;
+    };
+    char* env_read(char *s)
+    {
+        {
+            int i = 0;
+            delay = 0;
+            do
+            {
+                delay <<= 7;
+                i = *s;
+                delay += i & 0x7F;
+                s++;
+            } while (i & 0x80);
+        }
 
+        message = *s;
+        s++;
+        if (message == 0xff)
+        {
+            message_ex = *s;
+            s++;
+            data_size = *s;
+            s++;
+        }
+        else
+        {
+            int i = _message_length();
+            if (i != 0)
+            {
+                data_size = i;
+            }
+            else
+            {
+                int i=0;
+                message_ex = *s;
+                s++;
+                data_size = 0;
+                do
+                {
+                    data_size <<= 7;
+                    i = *s;
+                    data_size += i&0x7F;
+                    s++;
+                } while (i & 0x80);
+            }
+        }
+        message_data.reset(new unsigned char[data_size]);
+        memcpy_s(message_data.get(), data_size, s, data_size);
+        s += data_size;
+        return s;
+    };
+    ~midi_event()
+    {
+    };
 
+    int _message_length()
+    {
+        int length = 0;
+        switch (message & (0xf0))
+        {
+        case midi_reader::release:
+            length = 2;
+            break;
+        case midi_reader::push:
+            length = 2;
+            break;
+        case midi_reader::touch:
+            length = 2;
+            break;
+        case midi_reader::controller:
+            length = 2;
+            break;
+        case midi_reader::instrument:
+            length = 1;
+            break;
+        case midi_reader::pressure:
+            length = 1;
+            break;
+        case midi_reader::slip:
+            length = 2;
+            break;
+        case midi_reader::system:
+            length = 0;
+            break;
+        }
+        return length;
+    }
+
+    midi_reader::midi_message_type data_type()
+    {
+        return (midi_reader::midi_message_type)(message & 0xf0);
+    }
+
+    void print()
+    {
+        if (message == 0xff)
+        {
+            printf("delay:%d \tmessage:%02X %02X \tsize:%02X ", delay, message, message_ex, data_size);
+            
+        }
+        else
+        {
+
+            printf("delay:%d \tmessage:%02X \tsize:%02X ", delay, message, data_size);
+        }
+        if (data_size != 0)
+        {
+            printf("\tdata: ");
+            unsigned int i = 0;
+            for (i = 0; i < data_size; i++)
+            {
+                printf("%02X ", message_data.get()[i]);
+            }
+            
+        }
+        else
+        {
+            printf("\tno data");
+        }
+        std::cout << std::endl;
+    }
+
+};
 struct MetaEvent
 {
     Type m_type;
@@ -197,8 +386,12 @@ struct SysexEvent
     SysexEvent(){};
 };
 
-struct MidiMessage
+
+
+
+class MidiMessage
 {
+public:
     DeltaTime m_dtime;
     char m_status;
     char lastStatus = 0;
@@ -218,24 +411,35 @@ struct MidiMessage
     MidiMessage(){};
 };
 
-struct MidiTrack
+class MidiTrack
 {
+public:
     char m_magic[4];
     uint32_t m_seclen;
-    std::vector<MidiMessage> m_midi_messages;
-
+    //std::vector<MidiMessage> m_midi_messages;
+    std::vector<midi_event> events;
     MidiTrack(){};
+
+    void print_env()
+    {
+        std::vector <midi_event> ::iterator E;
+        std::cout << "--->events:" << events.size() << std::endl;
+        for (E = events.begin(); E != events.end(); E++)
+        {
+            E->print();
+        }
+
+    }
 };
 
 struct MidiFile
 {
     MidiHeader header;
-    MidiTrack tracks;// [header.m_ntracks];
+    std::vector<MidiTrack> tracks;// [header.m_ntracks];
 
     MidiFile(){};
 };
 #endif
-
 
 
 class MidiReader_file_interface
@@ -270,24 +474,28 @@ public:
     bool read(std::string file_path);
 
     //读取数据
-    bool _get_byte(char* data_buf,int byte_num);//从文件中读取指定字节大小的内容
-    bool get(void* addr, size_t len, bool is_char);
+    bool _get_byte(char* data_buf,int byte_num, bool move);//从文件中读取指定字节大小的内容
+    bool get(void* addr, size_t len, bool is_char, bool move);
     bool get_str(std::string& str, size_t len);
+
 
     int get_pos()//当前读取所在位置
     {
         return pos;
     }
-    bool eof()
+    void set_pos(int _pos)//当前读取所在位置
     {
-        if (pos == size)
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
+        pos = _pos;
+    }
+    void move_pos(int move)//当前读取所在位置
+    {
+        int _pos = pos + move;
+        if((_pos >=0)&&(_pos <=size))
+            set_pos(_pos);
+    }
+    char* get_buf()
+    {
+        return buf.get()+pos;
     }
 };
 
@@ -295,58 +503,36 @@ public:
 
 class MidiReader
 {
-public:
-    /*
-    bool open_file(std::string file_path);
-    bool read_file(MidiFile &file);
-    */
-    // len指定读取的结构大小 is_char如果为true则不进行大小端转换
-    /*
-    template<typename T> bool read_var(const T &t, void* addr, size_t len = 0, bool is_char = false);
-    bool read_str(std::string &str, size_t len);
-    */
+private:
+
     bool read_header();
     bool read_tracks();
 
     //屏幕输出 print
-    void print_header(const MidiHeader &header);
-    void print_tracks(const MidiTrack &tracks);
-    void print_file(const MidiFile &file);
+    void print_header();
+    void print_tracks();
+    
 
+
+    
+
+    MidiFile midi;
+    MidiReader_file_interface MF_interface;
+    // private:
+public:
     MidiReader();
     MidiReader(std::string file_path);
     ~MidiReader();
 
-    MidiFile midi;
-
-    // private:
-public:
-    
-    MidiReader_file_interface MF_interface;
-    int file_size;// 文件总大小 file size
-    
-    int current_pos;// 当前读到的位置 location
-
-    char test_s[5];
-    bool read_ok;
-
-    std::ifstream fs;//文件对象 file
-
-    std::shared_ptr<char> buff;//缓冲区 buf
-
-    bool is_file_opened(){ return fs.is_open(); }
-    bool read(int byte_num);
-
     bool read(std::string path);
-
-    void buff_clean();//清空缓冲区 clean data buffer
-    void init();
+    void print();
+    /*
     // track inner
     bool read_messages(MidiMessage &message);
     bool read_delta_time(DeltaTime &dt);
     bool read_meta_event(MetaEvent &me);
-    bool read_sysex_event(SysexEvent &se);
-
+    bool read_sysex_event(SysexEvent &se);*/
+    
 };
 
 

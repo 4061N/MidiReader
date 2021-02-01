@@ -17,20 +17,6 @@ void EndianSwap(char *pData, int length)
     }
 }
 
-/*
-//打开文件
-bool MidiReader::open_file(std::string file_path)
-{
-    fs.open(file_path, std::ios_base::in | std::ios_base::binary);  //以读取模式打开文件
-    if (!is_file_opened())                                          //若文件打开失败
-    {                                                               //
-        PRINT_ERROR(ERROR_READ_FILE)                                //打印错误信息：ERROR -1 打开文件失败
-        return false;                                               //
-    }                                                               //
-    init();                                                         //重置文件大小和缓冲区
-    return true;                                                    //
-}*/
-
 //文件的打开与关闭
 //打开文件
 bool MidiReader_file_interface::read(std::string file_path)
@@ -62,22 +48,22 @@ bool MidiReader_file_interface::read(std::string file_path)
 
 //文件的读取
 //从缓冲区中读取指定字节大小的内容
-bool MidiReader_file_interface::_get_byte(char* data_buf,int byte_num)
+bool MidiReader_file_interface::_get_byte(char* data_buf,int byte_num,bool move= true)
 {
     if ((pos + byte_num) > size)
     {
-        PRINT_ERROR(ERROR_OVER_RANGE)        //打印错误信息：ERROR -3 读取位置超出大小
         return false;
     }
     memcpy_s(data_buf, byte_num, buf.get()+pos, byte_num);
-    pos += byte_num;
+    if(move)
+        pos += byte_num;
     return true;
 }
 
 
-bool MidiReader_file_interface::get(void* addr, size_t len, bool is_char=false)
+bool MidiReader_file_interface::get(void* addr, size_t len, bool is_char=false, bool move = true)
 {
-    if (_get_byte((char*)addr,len))
+    if (_get_byte((char*)addr,len,move))
     {
         if (!is_char)
         {
@@ -103,23 +89,6 @@ bool MidiReader_file_interface::get_str(std::string& str, size_t len)
     return false;                               //
 }
 
-
-//清空缓冲区 clean data buffer
-void MidiReader::buff_clean()
-{
-    bzero(static_cast<void*>(buff.get()), file_size);
-}
-//重置文件大小和缓冲区
-void MidiReader::init()                     //
-{                                           //
-    fs.seekg(0, fs.end);                    //文件末尾
-    if (file_size < fs.tellg())             //若配置大小小于文件
-    {                                       //
-        file_size = (int)fs.tellg();        //设置文件大小
-        buff.reset(new char[file_size]);    //重置缓冲区大小
-    }                                       //
-    fs.seekg(fs.beg);                       //文件开头
-}
 
 MidiReader::MidiReader()                    //
 {                                           //
@@ -147,63 +116,6 @@ bool MidiReader::read(std::string path)
         return false;
 }
 
-/*
-//从文件中读取指定字节大小的内容
-bool MidiReader::read(int byte_num)
-{
-    if (current_pos + byte_num > file_size)  //
-    {                                        //
-        PRINT_ERROR(ERROR_OVER_RANGE);        //打印错误信息：ERROR -3 读取位置超出文件大小
-        return false;                        //
-    }                                        //
-    //buff_clean();                          //
-    fs.read(buff.get(), byte_num);           //从文件中读取数据到缓冲区
-    current_pos += byte_num;                 //当前读取位置刷新
-    return true;                             //
-}
-
-
-template<typename T>
-
-
-bool MidiReader::read_var(const T &t, void* addr, size_t len, bool is_char)
-{
-    size_t sz = len ? len : sizeof(t);                         //
-    if (read(sz))                                              //读取sz个字节
-    {                                                          //
-        memcpy_s(addr, sz, buff.get(), sz);                    //
-        // 文件读出来默认是大端 要转换到小端                   //
-        if (!is_char)EndianSwap((char *)&t, len ? len : sz);   //大小端转换
-        return true;                                           //
-    }                                                          //
-    else                                                       //
-    {                                                          //
-        PRINT_ERROR(ERROR_READ_HEADER);                         //打印错误信息：ERROR -4 读取文件头错误
-        return false;                                           //
-    }                                                          //
-}
-bool MidiReader::read_str(std::string &str, size_t len)
-{
-    str.resize(len);                                //改变str的大小
-    if (read(len))                                  //读取len个字节
-    {                                               //
-        memcpy_s(&str[0], len, buff.get(), len);    //将读取到的内容拷贝到str中
-        return true;                                //
-    }                                               //
-    PRINT_ERROR(ERROR_READ_STRING)                  //
-    return false;                                   //
-}
-
-bool MidiReader::read_file(MidiFile &file)
-{
-    read_header(file.header);                                 //
-    if (is_read_header_ok && read_tracks(file.tracks))        //
-    {                                                         //
-        return true;                                          //
-    }                                                         //
-    return false;                                             //
-}*/
-
 bool MidiReader::read_header()
 {
     if (MF_interface.get(&midi.header.m_magic, 4, true) &&    //
@@ -220,28 +132,41 @@ bool MidiReader::read_header()
 
 bool MidiReader::read_tracks()
 {
-    /*MF_interface.get(&midi.tracks.m_magic, 4, true);
-    MF_interface.get(addr_and_size(midi.tracks.m_seclen));
-    midi.tracks.m_seclen = 0;*/
-    
-    if (MF_interface.get(&midi.tracks.m_magic, 4, true) &&                        //
-        MF_interface.get(addr_and_size(midi.tracks.m_seclen))                     //
-        )    //                                                                   //
-    {                                                                             //
-                                                                                  //
-        int remaining = midi.tracks.m_seclen;                                     //
-        int init_pos = MF_interface.get_pos();                                    //
-        do {                                                                      //
-            midi.tracks.m_midi_messages.push_back(MidiMessage());                 //
-            MidiMessage &message = midi.tracks.m_midi_messages.back();            //
-            if (!read_messages(message)) return false;                            //
-            //remaining -= sizeof(message);                                       //
-        } while (remaining < MF_interface.get_pos() - init_pos);                  //
-        return true;                                                              //
-    }                                                                             //
-    return false;                                                                 //
-}
+    bool have;
+    do
+    {
+        midi.tracks.push_back(MidiTrack());
+        MidiTrack& track = midi.tracks.back();
 
+        have = MF_interface.get(&track.m_magic, 4, true)&& MF_interface.get(addr_and_size(track.m_seclen));
+        if (have)
+        {
+            int remaining = track.m_seclen;
+            char* BUF = MF_interface.get_buf();
+            char* _BUF = BUF;
+            do
+            {
+                track.events.push_back(midi_event());
+                midi_event& E = track.events.back();
+                BUF = E.env_read(BUF);
+                if ((E.message == 0xff) && (E.message_ex == 0x2f))
+                    break;
+            } while (remaining > BUF - _BUF);
+            MF_interface.move_pos(remaining);
+        }
+        else
+        {
+            break;
+        }
+    } while (1);
+    midi.tracks.pop_back();
+    if(midi.tracks.size()==0)
+        return false;
+    else
+        return true;
+    
+}
+/*
 
 bool MidiReader::read_messages(MidiMessage &message)
 {
@@ -257,31 +182,33 @@ bool MidiReader::read_messages(MidiMessage &message)
         //fs.seekg(-1, fs.tellg());  // FSeek(FTell() - 1);
 
     message.m_channel = (lastStatus & 0x0f);
-    /*if(lastStatus == -1)
-    {
-        if (!read_meta_event(message.meta_event))
-            return false;
-    }
-    switch ((lastStatus & 0xf0))
-    {
-    case 0x80://松开音符
-        break;
-    case 0x90://按下音符
-        break;
-    case 0xA0://触后音符
-        break;
-    case 0xB0://控制器
-        break;
-    case 0xC0://改变乐器
-        break;
-    case 0xD0://触后通道
-        break;
-    case 0xE0://滑音
-        break;
-    case 0xF0://系统码
-        break;
+    //if(lastStatus == -1)
+    //{
+    //    if (!read_meta_event(message.meta_event))
+    //        return false;
+    //}
+    //switch ((lastStatus & 0xf0))
+    //{
+    //case 0x80://松开音符
+    //    break;
+    //case 0x90://按下音符
+    //    break;
+    //case 0xA0://触后音符
+    //    break;
+    //case 0xB0://控制器
+    //    break;
+    //case 0xC0://改变乐器
+    //    break;
+    //case 0xD0://触后通道
+    //    break;
+    //case 0xE0://滑音
+    //    break;
+    //case 0xF0://系统码
+    //    break;
+    //
+    //}
 
-    }*/
+
     if ((lastStatus & 0xf0) == 0x80)
     {
         if (!MF_interface.get(&message.note_off_event, 2, true))return false;
@@ -320,7 +247,8 @@ bool MidiReader::read_messages(MidiMessage &message)
     }
     return true;
 }
-
+*/
+/*
 bool MidiReader::read_delta_time(DeltaTime &dt)
 {
     uint32_t &total = dt.total;
@@ -342,7 +270,8 @@ bool MidiReader::read_delta_time(DeltaTime &dt)
     if (!(dt.t3 & 0x80)) return true;
     return false;
 }
-
+*/
+/*
 bool MidiReader::read_meta_event(MetaEvent &me)
 {
     MF_interface.get(&me.m_type, 1);
@@ -434,52 +363,47 @@ bool MidiReader::read_meta_event(MetaEvent &me)
     }
     return true;
 }
-
-
+*/
+/*
 bool MidiReader::read_sysex_event(SysexEvent &se)
 {
     read_delta_time(se.m_length);
     MF_interface.get_str(se.m_message, se.m_length.total);
     return true;
 }
-
-void MidiReader::print_header(const MidiHeader &header)
+*/
+void MidiReader::print_header()
 {
     
     char s[5];
     int i;
     for (i = 0; i < 4; i++)
     {
-        s[i] = header.m_magic[i];
+        s[i] = midi.header.m_magic[i];
     }
     s[4] = '\0';
     std::cout << "header : \n" <<
         "m_magic = " << s << "\t" <<
-        "m_seclen = " << header.m_seclen << "\t" <<
-        "m_format = " << header.m_format << "\t" <<
-        "m_ntracks = " << header.m_ntracks << "\t" <<
-        "m_tickdiv = " << header.m_tickdiv << "\n";
+        "m_seclen = " << midi.header.m_seclen << "\t" <<
+        "m_format = " << midi.header.m_format << "\t" <<
+        "m_ntracks = " << midi.header.m_ntracks << "\t" <<
+        "m_tickdiv = " << midi.header.m_tickdiv << "\n";
 }
 
-void MidiReader::print_tracks(const MidiTrack &tracks)
+void MidiReader::print_tracks()
 {
-    std::cout << "track : \n" <<
-        "m_magic = " << tracks.m_magic << "\t" <<
-        "m_seclen = " << tracks.m_seclen << "\t";
-    int count = 1;
-    for (const auto &msg : tracks.m_midi_messages)
+    std::vector<MidiTrack>::iterator T;
+    for (T = midi.tracks.begin(); T != midi.tracks.end(); T++)
     {
-        std::cout << "msg" << count++ << " : \n" <<
-            msg.m_dtime << "\t" <<
-            "m_status = " << msg.m_status << "\t" <<
-            "lastStatus = " << msg.lastStatus << "\n";
+        std::cout << "--->size:" << T->m_seclen << std::endl;
+        T->print_env();
     }
 }
 
-void MidiReader::print_file(const MidiFile &file)
+void MidiReader::print()
 {
-    print_header(file.header);
-    print_tracks(file.tracks);
+    print_header();
+    print_tracks();
 }
 
 
