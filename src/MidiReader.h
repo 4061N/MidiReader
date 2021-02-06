@@ -150,6 +150,92 @@ namespace midi_reader
         //FF 7F 专有/其他数据
     };
 }
+enum notes
+{
+    C=0,
+    CX,
+    D,
+    DX,
+    E,
+    F,
+    FX,
+    G,
+    GX,
+    A,
+    AX,
+    B,
+};
+
+
+class midi_notes
+{
+public:
+    int press;                      //压力
+    notes note;                     //音符
+    int octave;                     //八度 , (-1到9)
+    midi_notes()
+    {
+    
+    }
+    midi_notes(unsigned char _note_octave,unsigned char _press)
+    {
+        press = _press;
+        note = (notes)(_note_octave % 12);
+        octave = (_note_octave / 12) - 1;
+    }
+
+    std::string notes_str(void)
+    {
+        std::string str;
+        switch (note)
+        {
+        case 0:
+            str = "C";
+            break;
+        case 1:
+            str = "C#";
+            break;
+        case 2:
+            str = "D";
+            break;
+        case 3:
+            str = "D#";
+            break;
+        case 4:
+            str = "E";
+            break;
+        case 5:
+            str = "F";
+            break;
+        case 6:
+            str = "F#";
+            break;
+        case 7:
+            str = "G";
+            break;
+        case 8:
+            str = "G#";
+            break;
+        case 9:
+            str = "A";
+            break;
+        case 10:
+            str = "A#";
+            break;
+        case 11:
+            str = "B";
+            break;
+        }
+        return str;
+    }
+    void print()
+    {
+        printf(( "音符：" + notes_str()+" \t").c_str());
+        printf("八度：%d \t", octave);
+        printf("力度：%d \t", press);
+    }
+};
+
 class midi_event
 {
 public:
@@ -257,8 +343,78 @@ public:
         return (midi_reader::midi_message_type)(message & 0xf0);
     }
 
+    void print_env()
+    {
+        printf("延时:%8d\t", delay);
+        printf("音轨:%d\t", message&0x0f);
+        unsigned char* d = message_data.get();
+        switch (message & (0xf0))
+        {
+        case midi_reader::release:
+        {
+            midi_notes note(d[0], d[1]);
+            printf("-松开按键\t");
+            note.print();
+            printf("\n");
+        }
+            break;
+        case midi_reader::push:
+        {
+            midi_notes note(d[0], d[1]);
+            printf("+按下按键\t");
+            note.print();
+            printf("\n");
+        }
+            break;
+        case midi_reader::touch:
+        {
+            midi_notes note(d[0], d[1]);
+            printf("触后音符\t");
+            note.print();
+            printf("\n");
+        }
+            break;
+        case midi_reader::controller:
+        {
+            printf("改变控制器\t");
+            printf("控制器号码：%d\t", d[0]);
+            printf("控制器参数：0x%2X\t", d[1]);
+            printf("\n");
+        }
+            break;
+        case midi_reader::instrument:
+        {
+            printf("改变乐器\t");
+            printf("乐器号码：%d\t",d[0]);
+            printf("\n");
+        }
+            break;
+        case midi_reader::pressure:
+        {
+            printf("通道触动压力\t");
+            printf("参数：0x%2X\t", d[0]);
+            printf("\n");
+        }
+            break;
+        case midi_reader::slip:
+        {
+            printf("滑音\t");
+            printf("\n");
+        }
+            break;
+        case midi_reader::system:
+        {
+            printf("系统信息\t");
+            printf("\n");
+        }
+            break;
+        }
+    }
+
     void print()
     {
+        print_env();
+        /*
         if (message == 0xff)
         {
             printf("delay:%d \tmessage:%02X %02X \tsize:%02X ", delay, message, message_ex, data_size);
@@ -284,6 +440,7 @@ public:
             printf("\tno data");
         }
         std::cout << std::endl;
+        */
     }
 
 };
