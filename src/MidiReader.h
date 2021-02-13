@@ -155,6 +155,7 @@ class midi_event;
 class midi_track;
 class midi_file_interface;
 class midi_file;
+class midi_wav_maker;
 class MidiReader;
 
 #define mid_A_fq 440
@@ -263,6 +264,7 @@ public:
 
     char* env_read(char *s)
     {
+        char *x = s;
         {
             int i = 0;
             delay = 0;
@@ -274,7 +276,6 @@ public:
                 s++;
             } while (i & 0x80);
         }
-
         message = *s;
         s++;
         if (message == 0xff)
@@ -494,14 +495,61 @@ public:
 };
 #endif
 
+class midi_wav_maker
+{
+private:
+    struct {
+        char RIFF[4];    //头部分那个RIFF
+        long int size0;//存的是后面所有文件大小
+        char WAVE[4];
+        char FMT[4];
+        long int size1;//存的是fmt保存的大小，包含这之后，data前面几个，共16个
+        short int fmttag;
+        short int channel;
+        long int samplespersec;//每秒采样数，用的是sampleRate
+        long int bytepersec;
+        short int blockalign;
+        short int bitpersamples;
+        char DATA[4];
+        long int size2;//声音文件大小。
+
+    }head;
+
+    const int sampleRate= 44100;
+    const double PI = 3.1415926535897932384626433832795;
+    float press_point[2000];
+
+    int buf_note(int16_t* s, midi_note* note, int channel);
+
+    float get_press(int i)//计算每一毫秒的衰减
+    {
+        if (i < 2000)
+            return press_point[i];
+        else
+            return 0;
+    }
+public:
+    
+    MidiReader* reader;
+
+    midi_wav_maker();
+    
+    void set_context();
+
+    void output(std::string PATH);
+    
+
+};
+
 
 class MidiReader
 {
 private:
     // private:
+    bool have_read = false;
 public:
     midi_file midi;
-
+    midi_wav_maker wav_maker;
     MidiReader()
     {
     
@@ -514,7 +562,7 @@ public:
     void set_context();
     bool read(std::string path);
     void print();
-    
+    bool make_wav(std::string PATH);
 };
 
 

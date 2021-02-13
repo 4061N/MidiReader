@@ -93,24 +93,22 @@ bool midi_file_interface::get_str(std::string& str, size_t len)
 void  midi_file::get_event_times(void)
 {
     time_events.clear();
-    std::vector<midi_track>::iterator T;
-    std::vector <midi_event> ::iterator E;
-    for (T = tracks.begin(); T != tracks.end(); T++)
+    for (auto T: tracks)
     {
         unsigned long long time = 0;
-        for (E = T->events.begin(); E != T->events.end(); E++)
+        for (auto E : T.events)
         {
-            time += E->delay;
-            E->int_begin = time;
+            time += E.delay;
+            E.int_begin = time;
         }
     }
-    for (T = tracks.begin(); T != tracks.end(); T++)
+    for (auto T : tracks)
     {
-        for (E = T->events.begin(); E != T->events.end(); E++)
+        for (auto E : T.events)
         {
-            if (E->message_ex == 0x51)
+            if (E.message_ex == 0x51)
             {
-                time_events.push_back(*E);
+                time_events.push_back(E);
             }
         }
     }
@@ -149,17 +147,17 @@ void midi_file::set_event_times(void)
 void midi_file::get_notes(void)
 {
     notes.clear();  
-    std::vector <midi_track>::iterator T;
+    //std::vector <midi_track>::iterator T;
     std::vector <midi_event> ::iterator E,i;
-    for (T = tracks.begin(); T != tracks.end(); T++)
+    for (auto T:tracks)
     {
-        for (E = T->events.begin(); E != T->events.end(); E++)
+        for (E = T.events.begin(); E != T.events.end(); E++)
         {
             if (E->message == midi_reader::push)
             {
                 unsigned char note_message = E->message_data.get()[0];
                 bool find = false;
-                for (i = E + 1; i != T->events.end(); i++)
+                for (i = E + 1; i != T.events.end(); i++)
                 {
                     if (i->message == midi_reader::release)
                     {
@@ -208,16 +206,16 @@ bool midi_file::read_tracks()
         if (have)
         {
             int remaining = track.m_seclen;
-            char* BUF = MF_interface.get_buf();
-            char* _BUF = BUF;
+            int begin = MF_interface.get_pos();
             do
             {
+                char * BUF = MF_interface.get_buf();
                 track.events.push_back(midi_event());
                 midi_event& E = track.events.back();
-                BUF = E.env_read(BUF);
+                MF_interface.move_pos(E.env_read(BUF)-BUF);
                 if ((E.message == 0xff) && (E.message_ex == 0x2f))
                     break;
-            } while (remaining > BUF - _BUF);
+            } while (remaining > MF_interface.get_pos()-begin);
             MF_interface.move_pos(remaining);
         }
         else
@@ -251,10 +249,27 @@ bool MidiReader::read(std::string path)
 {
     bool d = midi.read(path);
     if (d)
+    {
         set_context();
+        have_read = true;
+    }
+    else
+    {
+        have_read = false;
+    }
     return d;
 }
 
+
+bool MidiReader::make_wav(std::string PATH)
+{
+    if (have_read)
+    {
+        wav_maker.output(PATH);
+        return true;
+    }
+    return false;
+}
 
 
 void midi_event::set_context()
@@ -264,237 +279,34 @@ void midi_event::set_context()
 
 void midi_track::set_context()
 {
-    std::vector <midi_event> ::iterator E;
-    for (E = events.begin(); E != events.end(); E++)
+    for (auto E: events)
     {
-        E->track = this;
-        E->set_context();
+        E.track = this;
+        E.set_context();
     }
 }
 
 void midi_file::set_context()
 {
-    std::vector<midi_track>::iterator T;
-    for (T = tracks.begin(); T != tracks.end(); T++)
+    for (auto T: tracks)
     {
-        T->file = this;
-        T->set_context();
+        T.file = this;
+        T.set_context();
     }
+}
+
+void midi_wav_maker::set_context()
+{
+
 }
 
 void MidiReader::set_context()
 {
     midi.reader = this;
+    wav_maker.reader = this;
     midi.set_context();
+    wav_maker.set_context();
 }
-
-
-/*
-
-bool MidiReader::read_messages(MidiMessage &message)
-{
-    if (!read_delta_time(message.m_dtime))return false;
-    if (!MF_interface.get(addr_and_size(message.m_status)))return false;
-    char &m_status = message.m_status;
-    char lastStatus = 0;
-
-
-    if (m_status & 0x80)
-        lastStatus = m_status;
-    else;
-        //fs.seekg(-1, fs.tellg());  // FSeek(FTell() - 1);
-
-    message.m_channel = (lastStatus & 0x0f);
-    //if(lastStatus == -1)
-    //{
-    //    if (!read_meta_event(message.meta_event))
-    //        return false;
-    //}
-    //switch ((lastStatus & 0xf0))
-    //{
-    //case 0x80://松开音符
-    //    break;
-    //case 0x90://按下音符
-    //    break;
-    //case 0xA0://触后音符
-    //    break;
-    //case 0xB0://控制器
-    //    break;
-    //case 0xC0://改变乐器
-    //    break;
-    //case 0xD0://触后通道
-    //    break;
-    //case 0xE0://滑音
-    //    break;
-    //case 0xF0://系统码
-    //    break;
-    //
-    //}
-
-
-    if ((lastStatus & 0xf0) == 0x80)
-    {
-        if (!MF_interface.get(&message.note_off_event, 2, true))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0x90)
-    {
-        if (!MF_interface.get(&message.note_on_event, 2, true))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0xA0)
-    {
-        if (!MF_interface.get(&message.note_pressure_event, 2, true))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0xB0)
-    {
-        if (!MF_interface.get(&message.controller_event, 2, true))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0xC0)
-    {
-        if (!MF_interface.get(&message.program_event, 1, true))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0xD0)
-    {
-        if (!MF_interface.get(&message.channel_pressure_event, 1, true))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0xE0)
-    {
-        if (!MF_interface.get(&message.pitch_bend_event, 2, true))return false;
-    }
-    else if (lastStatus == -1)
-    {
-        if (!read_meta_event(message.meta_event))return false;
-    }
-    else if ((lastStatus & 0xf0) == 0xF0)
-    {
-        if (!read_sysex_event(message.sysex_event))return false;
-    }
-    return true;
-}
-*/
-/*
-bool MidiReader::read_delta_time(DeltaTime &dt)
-{
-    uint32_t &total = dt.total;
-
-    MF_interface.get(addr_and_size(dt.t0));
-    total += dt.t0 & 0x7f;
-    if (!(dt.t0 & 0x80)) return true;
-    MF_interface.get(addr_and_size(dt.t1));
-    total <<= 7;
-    total += dt.t1 & 0x7f;
-    if (!(dt.t1 & 0x80)) return true;
-    MF_interface.get(addr_and_size(dt.t2));
-    total <<= 7;
-    total += dt.t2 & 0x7f;
-    if (!(dt.t2 & 0x80)) return true;
-    MF_interface.get(addr_and_size(dt.t3));
-    total <<= 7;
-    total += dt.t3 & 0x7f;
-    if (!(dt.t3 & 0x80)) return true;
-    return false;
-}
-*/
-/*
-bool MidiReader::read_meta_event(MetaEvent &me)
-{
-    MF_interface.get(&me.m_type, 1);
-    read_delta_time(me.m_length);
-    Type &m_type = me.m_type;
-    DeltaTime &m_length = me.m_length;
-    if (m_type == META_SEQUENCE_NUM)
-    {
-        MF_interface.get(addr_and_size(me.m_seqNum));
-    }
-    else if (m_type == META_TEXT)
-    {
-        MF_interface.get_str(me.m_text, m_length.total);
-    }
-    else if (m_type == META_COPYRIGHT)
-    {
-        MF_interface.get_str(me.m_copyright, m_length.total);
-    }
-    else if (m_type == META_SEQUENCE_NAME)
-    {
-        MF_interface.get_str(me.m_name, m_length.total);
-    }
-    else if (m_type == META_INSTRUMENT_NAME)
-    {
-        MF_interface.get_str(me.m_name, m_length.total);
-    }
-    else if (m_type == META_LYRIC)
-    {
-        MF_interface.get_str(me.m_lyric, m_length.total);
-    }
-    else if (m_type == META_MARKER)
-    {
-        MF_interface.get_str(me.m_marker, m_length.total);
-    }
-    else if (m_type == META_CUE_POINT)
-    {
-        MF_interface.get_str(me.m_cuePoint, m_length.total);
-    }
-    else if (m_type == META_PROGRAM_NAME)
-    {
-        MF_interface.get_str(me.m_programName, m_length.total);
-    }
-    else if (m_type == META_DEVICE_NAME)
-    {
-        MF_interface.get_str(me.m_deviceName, m_length.total);
-    }
-    else if (m_type == META_MIDI_CHANNEL_PREFIX)
-    {
-        MF_interface.get(addr_and_size(me.m_channelPrefix));
-    }
-    else if (m_type == META_MIDI_PORT)
-    {
-        MF_interface.get(addr_and_size(me.m_port));
-    }
-    else if (m_type == META_END_OF_TRACK)
-    {
-    }
-    else if (m_type == META_TEMPO)
-    {
-        uint32_t m_usecPerQuarterNote;
-        MF_interface.get(&m_usecPerQuarterNote, 3);
-        me.m_usecPerQuarterNote = m_usecPerQuarterNote;
-        me.m_bpm = 60000000 / m_usecPerQuarterNote;
-        //fs.seekg(-1, fs.tellg());
-    }
-    else if (m_type == META_SMPTE_OFFSET)
-    {
-        MF_interface.get(addr_and_size(me.m_hours));
-        MF_interface.get(addr_and_size(me.m_mins));
-        MF_interface.get(addr_and_size(me.m_secs));
-        MF_interface.get(addr_and_size(me.m_fps));
-        MF_interface.get(addr_and_size(me.m_fracFrames));
-    }
-    else if (m_type == META_TIME_SIGNATURE)
-    {
-        MF_interface.get(addr_and_size(me.m_numerator));
-        MF_interface.get(addr_and_size(me.m_denominator));
-        MF_interface.get(addr_and_size(me.m_clocksPerClick));
-        MF_interface.get(addr_and_size(me.m_32ndPer4th));
-    }
-    else if (m_type == META_KEY_SIGNATURE)
-    {
-        MF_interface.get(addr_and_size(me.m_flatsSharps));
-        MF_interface.get(addr_and_size(me.m_majorMinor));
-    }
-    else
-    {
-        MF_interface.get_str(me.m_data, m_length.total);
-    }
-    return true;
-}
-*/
-/*
-bool MidiReader::read_sysex_event(SysexEvent &se)
-{
-    read_delta_time(se.m_length);
-    MF_interface.get_str(se.m_message, se.m_length.total);
-    return true;
-}
-*/
 
 std::string midi_event::data_str()
 {
@@ -656,11 +468,10 @@ void midi_event::print()
 
 void midi_track::print()
 {
-    std::vector <midi_event> ::iterator E;
     std::cout << "--->events:" << events.size() << std::endl;
-    for (E = events.begin(); E != events.end(); E++)
+    for (auto E: events)
     {
-        E->print();
+        E.print();
     }
 
 }
@@ -685,20 +496,18 @@ void midi_file::print_header()
 
 void midi_file::print_tracks()
 {
-    std::vector<midi_track>::iterator T;
-    for (T = tracks.begin(); T != tracks.end(); T++)
+    for (auto T: tracks)
     {
-        std::cout << "--->size:" << T->m_seclen << std::endl;
-        T->print();
+        std::cout << "--->size:" << T.m_seclen << std::endl;
+        T.print();
     }
 }
 
 void midi_file::print_notes()
 {
-    std::vector <midi_note> ::iterator N;
-    for (N = notes.begin(); N != notes.end(); N++)
+    for (auto N : notes)
     {
-        N->print();
+        N.print();
         printf("\n");
     }
 }
@@ -708,11 +517,88 @@ void midi_file::print()
     print_header();
     print_tracks();
     print_notes();
-
 }
+
 void MidiReader::print()
 {
     midi.print();
 }
 
+int midi_wav_maker::buf_note(int16_t* s, midi_note* note, int channel)
+{
+    int SAMPLE_NUM = sampleRate * note->time / 1000; //采集样本总数
+    int AUDIO_CYCLE = sampleRate / note->frequency; //一个正弦波采集样本个数
+    int i;
+    float amp = (float)note->press / channel;
+    float press = 0;
+    s = s + (int)((float)sampleRate * note->begin / 1000);
+    for (i = 0; i < SAMPLE_NUM; i++)
+    {
+        if ((i % (sampleRate / 1000)) == 0)
+        {
+            press = amp * get_press(i / (sampleRate / 1000));
+        }
+
+        s[i] = s[i] + (int16_t)(((float)press * sin(2 * PI * i / AUDIO_CYCLE) * 127));//使用sin函数，初始点是0
+    }
+    return SAMPLE_NUM;
+}
+
+midi_wav_maker::midi_wav_maker()
+{
+    head =
+    {
+        {'R','I','F','F'},
+        0, //文件长度=该字段+ 8
+        {'W','A','V','E'},
+        {'f','m','t',' '},
+        16, //格式长度，在此之前成员的大小
+        1,   //编码格式为PCM
+        1, //声道
+        sampleRate, //采样频率
+        sampleRate * 2,// 数据传输速率
+        2, //数据块对齐单位(一个sample所占字节数)
+        16,//采样位数(数度)
+        {'d','a','t','a'},
+        0
+    };//采样数据的大小
+
+    for (int i = 0; i < 10; i++)
+    {
+        press_point[i] = i * (1 / 10);
+    }
+    float s = 1;
+    for (int i = 10; i < 2000; i++)
+    {
+        s = press_point[i] = s * 0.995;
+    }
+}
+
+void midi_wav_maker::output(std::string PATH)
+{
+    long SAMPLE_NUM = sampleRate* reader->midi.notes.back().end / 1000 ; //采集样本总数
+    std::shared_ptr<int16_t>body;
+    body.reset(new int16_t[SAMPLE_NUM]);
+    int16_t* s = body.get();
+
+    int channel = reader->midi.tracks.size() - 1;
+
+    for (long i = 0; i < SAMPLE_NUM; i++)
+    {
+        s[i] = 0;
+    }
+
+    for (auto i : reader->midi.notes)
+    {
+        buf_note(s, &i, channel);
+    }
+    head.size2 = SAMPLE_NUM * 2;
+    head.size0 = head.size2 + 16 + 8;
+
+    std::ofstream ocout;
+    ocout.open(PATH, std::ios::out | std::ios::binary);//打开（不存在时生成）
+    ocout.write((char*)&head, sizeof head);//将文件头部分写进文件
+    ocout.write((char*)body.get(), SAMPLE_NUM * 2);//将数据文件写入程序
+    ocout.close();//关闭文件
+}
 
