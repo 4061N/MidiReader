@@ -26,7 +26,7 @@ namespace _midi_reader
 #define mid_A_data 57           //标准A的位置
 //#define mid_A_data 45         //标准A的位置
 #define WAV_Attenuation 0.98           //WAV文件中的最大衰减系数
-#define WAV_Attenuation_no_touch 0.97   //WAV文件中的延音衰减系数
+#define WAV_Attenuation_no_touch 0.999   //WAV文件中的延音衰减系数,越大则延音效果越好(推荐0.9970到0.9995)
         
 
 
@@ -484,6 +484,15 @@ namespace _midi_reader
         void set_context();
     };
 
+    struct tenuto
+    {
+        unsigned char note_octave;
+        float press;
+        double begin;
+        double time;
+        int M;
+    };
+
     class midi_wav_maker
     {
     private:
@@ -503,20 +512,13 @@ namespace _midi_reader
             long int size2;//声音文件大小。
 
         }head;
+        
 
         const int sampleRate = 44100;
         const double PI = 3.1415926535897932384626433832795;
-        float press_point[1000];
+        std::vector<tenuto> tenuto_list;
 
-        int buf_note(float* s, midi_note* note, int channel);
-
-        float get_press(int i)//计算每一毫秒的衰减
-        {
-            if (i < 1000)
-                return press_point[i];
-            else
-                return 0;
-        }
+        int buf_note(float* s, midi_note* note);
     public:
 
         MidiReader* reader;

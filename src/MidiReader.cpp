@@ -516,33 +516,74 @@ namespace _midi_reader
 
 
 
-    int midi_wav_maker::buf_note(float* s, midi_note* note, int channel)
+    int midi_wav_maker::buf_note(float* s, midi_note* note)
     {
         int SAMPLE_NUM = sampleRate * note->time / 1000; //采集样本总数
         int AUDIO_CYCLE = sampleRate / note->frequency; //一个正弦波采集样本个数
         int i;
-        float press = (float)note->press;
+        float press = (float)note->press,_press;
         s = s + (int)((float)sampleRate * note->begin / 1000);
+        int M = sampleRate/1000;// (int)sqrt((float)sampleRate / note->frequency);//衰减系数=频率的（1/2）次方
         for (i = 0; i < SAMPLE_NUM; i++)
         {
-            if ((i % (AUDIO_CYCLE)) == 0)//每一个波后可以进行音量衰减
+            if ((i % M) == 0)//每一个波后可以进行音量衰减
             {
                 //press = press * std::sqrt(std::pow(128 , 2) - std::pow(press, 2)) * WAV_Attenuation;
                 //press = get_press((i / (AUDIO_CYCLE)));// *128 / (128-press);
-                press = press * (WAV_Attenuation+(1- WAV_Attenuation) *(128 - press) / 128);
+                _press = press * (WAV_Attenuation+(1- WAV_Attenuation) *(128 - press) / 128);
+            }
+            if (i % AUDIO_CYCLE == 0)
+            {
+                press = _press;
             }
 
             s[i] = s[i] + (((float)press * sin(2 * PI * i / AUDIO_CYCLE)));//使用sin函数，初始点是0
         }
+        press = _press;
         s += i;
-        float _press = press;
         if (press > 0.01)//延音
         {
-            for (i = 0; i < sampleRate*5; i++)//最多延音5秒
+            double time=-1;
+            for (auto j : reader->midi.notes)//找出此音符下一次被按下的时间
             {
-                if ((i % (AUDIO_CYCLE)) == 0)//每一个波后可以进行音量衰减
+                if (j.begin < note->end)//跳过之前的音符
                 {
-                    press = press  * WAV_Attenuation_no_touch;
+                    continue;
+                }
+                else
+                {
+                    if (j.note_octave != note->note_octave)//音符不匹配则跳过
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        if (j.begin - note->end > 9999)//最多延音10秒
+                        {
+                            time = 9999;
+                        }
+                        else
+                        {
+                            time = j.begin - note->end;//延音只到下一次被按下为止
+                        }
+                        break;
+                    }
+                }
+            }
+            if (time == -1)//作为最后一个音符，延音时间最长10秒
+            {
+                time = 9999;
+            }
+            int max = sampleRate * time / 1000;
+            for (i = 0; i < max; i++)
+            {
+                if ((i % M) == 0)
+                {
+                    _press = press  * WAV_Attenuation_no_touch;//延音衰减，决定延音时间和效果
+                }
+                if (i % AUDIO_CYCLE == 0)//每一个波后可以进行音量衰减
+                {
+                    press = _press;
                     if (press < 0.01)
                         break;
                 }
@@ -572,25 +613,15 @@ namespace _midi_reader
             0
         };//采样数据的大小
 
-        for (int i = 0; i < 10; i++)
-        {
-            press_point[i] = i * (1 / 10);
-        }
-        float s = 1;
-        for (int i = 10; i < 1000; i++)
-        {
-            s = press_point[i] = s * WAV_Attenuation;
-        }
     }
 
     void midi_wav_maker::output(std::string PATH)
     {
-        long SAMPLE_NUM = sampleRate * reader->midi.notes.back().end / 1000+ sampleRate * 5; //采集样本总数 音符数据+最后一个音符的延音数据
+        long SAMPLE_NUM = sampleRate * reader->midi.notes.back().end / 1000+ sampleRate * 10; //采集样本总数 音符数据+最后一个音符的延音数据
         std::shared_ptr<float>body_data(new float[SAMPLE_NUM]);
         std::shared_ptr<int16_t>body(new int16_t[SAMPLE_NUM]);
         float* s = body_data.get();
         int16_t* b = body.get();
-        int channel = reader->midi.tracks.size()-1;
 
         for (long i = 0; i < SAMPLE_NUM; i++)
         {
@@ -599,7 +630,7 @@ namespace _midi_reader
 
         for (auto i : reader->midi.notes)
         {
-            buf_note(s, &i, channel);
+            buf_note(s, &i);
         }
 
         float M = 0;
@@ -622,13 +653,13 @@ namespace _midi_reader
                 break;
         }
         i = SAMPLE_NUM - i;
-        head.size2 = SAMPLE_NUM * 2;
+        head.size2 = SAMPLE_NUM  * 2 - i;
         head.size0 = head.size2 + 16 + 8;
 
         std::ofstream ocout;
         ocout.open(PATH, std::ios::out | std::ios::binary);//打开（不存在时生成）
         ocout.write((char*)&head, sizeof head);//将文件头部分写进文件
-        ocout.write((char*)body.get(), SAMPLE_NUM * 2-i);//将数据文件写入程序
+        ocout.write((char*)body.get(), head.size2);//将数据文件写入程序
         ocout.close();//关闭文件
     }
 }
